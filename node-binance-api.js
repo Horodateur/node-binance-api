@@ -733,7 +733,7 @@ let api = function Binance( options = {} ) {
      * @param {object} opened_callback - the function to call when opened
      * @return {WebSocket} - websocket reference
      */
-    const subscribeCombined = function ( streams, callback, reconnect = false, opened_callback = false ) {
+    const subscribeCombined = function ( streams, callback, reconnect = false, opened_callback = false, ko_callback = false ) {
         let httpsproxy = process.env.https_proxy || false;
         let socksproxy = process.env.socks_proxy || false;
         const queryParams = streams.join( '/' );
@@ -762,10 +762,10 @@ let api = function Binance( options = {} ) {
         if ( Binance.options.verbose ) {
             Binance.options.log( 'CombinedStream: Subscribed to [' + ws.endpoint + '] ' + queryParams );
         }
-        ws.on( 'open', handleSocketOpen.bind( ws, opened_callback ) );
+        ws.on( 'open', handleSocketOpen.bind( ws, opened_callback, ko_callback ) );
         ws.on( 'pong', handleSocketHeartbeat );
-        ws.on( 'error', handleSocketError );
-        ws.on( 'close', handleSocketClose.bind( ws, reconnect ) );
+        ws.on( 'error', handleSocketError.bind( ws, ko_callback ) );
+        ws.on( 'close', handleSocketClose.bind( ws, reconnect, ko_callback ) );
         ws.on( 'message', data => {
             try {
                 callback( JSON.parse( data ).data );
@@ -5891,6 +5891,29 @@ let api = function Binance( options = {} ) {
                 };
                 const endpoint = symbol ? `${ symbol.toLowerCase() }@bookTicker` : '!bookTicker'
                 let subscription = subscribe( endpoint, data => callback( fBookTickerConvertData( data ) ), reconnect, opened_callback, ko_callback );
+                return subscription.endpoint;
+            },
+
+            /**
+             * Spot WebSocket bookTicker (bid/ask quotes including price & amount)
+             * @param {symbol} symbol name or false. can also be a callback
+             * @param {function} callback - callback function
+             * @param {function} opened_callback - opened_callback function
+             * @param {function} ko_callback - ko_callback function
+             * @return {string} the websocket endpoint
+             */
+            bookTickersCombined: function bookTickerCombinedStream( symbols = false, callback = console.log, opened_callback = false, ko_callback = false ) {
+                if ( typeof symbols == 'function' ) {
+                    ko_callback = opened_callback;
+                    opened_callback = callback;
+                    callback = symbols;
+                    symbols = false;
+                }
+                let reconnect = () => {
+                    if ( Binance.options.reconnect ) bookTickerCombinedStream( symbols, callback, opened_callback, ko_callback );
+                };
+                let streams = symbols.map(s=>`${s.toLowerCase()}@bookTicker`)
+                let subscription = subscribeCombined( streams, data => callback( fBookTickerConvertData( data ) ), reconnect, opened_callback, ko_callback );
                 return subscription.endpoint;
             },
 
